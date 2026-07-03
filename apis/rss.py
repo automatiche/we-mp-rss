@@ -1,3 +1,4 @@
+import time
 from fastapi import APIRouter, Depends, Query, HTTPException, Request,Response
 from fastapi import status
 from fastapi.responses import Response
@@ -9,7 +10,7 @@ from .base import success_response, error_response
 from core.auth import get_current_user
 from core.config import cfg
 from apis.base import format_search_kw
-from core.print import print_error,print_success
+from core.print import print_error,print_success,print_info
 
 
 def clamp_rss_limit(limit: int) -> int:
@@ -161,21 +162,56 @@ def UpdateArticle(art:dict):
 
 
 @router.api_route("/{feed_id}/fresh", summary="更新并获取公众号文章RSS")
-async def update_rss_feeds( 
+async def update_rss_feeds(
     request: Request,
     feed_id: str,
     limit: int = Query(100, ge=1, le=100),
     offset: int = Query(0, ge=0),
     # current_user: dict = Depends(get_current_user)
 ):
-        #如果需要放开授权，请只允许内网访问，防止 被利用攻击 放开授权办法，注释上面current_user: dict = Depends(get_current_user)
+        """
+        按需刷新 + 频率控制：
+        - 距上次抓取 >= min_refresh_interval 时触发微信抓取，再返回 RSS
+        - 距上次抓取 < min_refresh_interval 时直接返回 DB 缓存
+        如果放开授权，请只允许内网访问，防止被利用攻击
+        """
+        session = DB.get_session()
+        try:
+            mp = session.query(Feed).filter(Feed.id == feed_id).first()
+            if mp is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=error_response(code=40401, message="公众号不存在")
+                )
 
-        # from core.models.feed import Feed
-        # mp = DB.session.query(Feed).filter(Feed.id == feed_id).first()
-        # from core.wx import WxGather
-        # wx=WxGather().Model()
-        # wx.get_Articles(mp.faker_id,Mps_id=mp.id,CallBack=UpdateArticle)
-        # result=wx.articles
+            min_interval = int(cfg.get("min_refresh_interval", 300))
+            now_ts = int(time.time())
+            last_update = int(mp.update_time or 0)
+            elapsed = now_ts - last_update
+
+            if elapsed >= min_interval:
+                print_info(f"[RSS Fresh] 触发抓取: {mp.mp_name} (距上次 {elapsed}s)")
+                from core.wx import WxGather
+                wx = WxGather().Model()
+                try:
+                    wx.get_Articles(
+                        mp.faker_id,
+                        Mps_id=mp.id,
+                        CallBack=UpdateArticle,
+                        Mps_title=mp.mp_name,
+                        MaxPage=1,
+                    )
+                    # 更新最后抓取时间
+                    mp.update_time = now_ts
+                    session.commit()
+                    print_success(f"[RSS Fresh] {mp.mp_name}: 抓取完成, 获取 {wx.all_count()} 条")
+                except Exception as e:
+                    print_error(f"[RSS Fresh] {mp.mp_name}: 抓取失败 - {e}")
+            else:
+                print_info(f"[RSS Fresh] {mp.mp_name}: 距上次抓取仅 {elapsed}s, 跳过抓取 (min={min_interval}s)")
+
+        finally:
+            session.close()
 
         return await get_mp_articles_source(request=request,feed_id=feed_id, limit=limit,offset=offset, is_update=True)
 

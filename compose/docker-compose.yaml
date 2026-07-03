@@ -1,23 +1,11 @@
 services:
-  mysql:
-    image: docker.1ms.run/mysql:8.3.0
-    container_name: db-mp
-    restart: always
-    env_file:
-      - ../.env
-    ports:
-      - "3306:3306"
-    volumes:
-      - db_data:/var/lib/mysql
-      - ./mysql-init:/docker-entrypoint-initdb.d
-
   redis:
     image: docker.1ms.run/redis:7-alpine
     container_name: we-mp-rss-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -42,24 +30,25 @@ services:
       - ./singbox/run-singbox.sh:/etc/sing-box/run-singbox.sh:ro
 
   we-mp-rss:
-    image: ghcr.io/rachelos/we-mp-rss:latest
+    image: rachelos/we-mp-rss:latest
     container_name: we-mp-rss
     restart: unless-stopped
     env_file:
       - ../.env
     environment:
-      DB: mysql+pymysql://rss_user:pass123456@db-mp/we_mp_rss?charset=utf8mb4
+      # 默认 SQLite，数据在 ./data/db.db；迁移 MySQL 时设 DB 环境变量即可
       REDIS_URL: redis://redis:6379/0
       PROXY_HTTP_URL: http://singbox:7890
+      WERSS_AUTH_WEB: "True"
     ports:
       - "8001:8001"
     volumes:
-      - ./data:/app/data
+      - ../data:/app/data
+      - ../apis:/app/apis
+      - ../config.yaml:/app/config.yaml
     depends_on:
-      - mysql
       - redis
       - singbox
 
 volumes:
-  db_data:
   redis_data:
