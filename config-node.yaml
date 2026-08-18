@@ -122,6 +122,7 @@ gather:
   #是否采集内容  默认False
   content: ${GATHER.CONTENT:-False}
   #采集模式，web模式（可采集到发布链接)，api模式（可采集临时链接），app模式（采集最新消息）
+  #weread_mp 使用微信读书 Web 接口采集公众号文章，需要下方 Cookie 与 x-wr-ticket
   model: ${GATHER.MODEL:-web}
   #是否自动检查未采集文章内容，默认False
   content_auto_check: ${GATHER.CONTENT_AUTO_CHECK:-True}
@@ -146,7 +147,7 @@ proxy:
 #安全配置
 safe:
     # 需要隐藏的配置信息，用逗号分隔 如：db,secret,token等 
-    hide_config: "${SAFE_HIDE_CONFIG:-db,secret,token,notice.wechat,notice.feishu,notice.dingding}"
+    hide_config: "${SAFE_HIDE_CONFIG:-db,secret,token,weread.cookie,weread.ticket,notice.wechat,notice.feishu,notice.dingding}"
     # 授权加密KEY
     lic_key: "${SAFE_LIC_KEY:-RACHELOS}"
 # 微信账号配置
@@ -154,6 +155,15 @@ wechat:
   # 允许切换的账号ID列表，为空表示允许所有账号，用逗号分隔
   # 例如: "account1,account2,account3" 或留空 ""
   allowed_accounts: "${WECHAT_ALLOWED_ACCOUNTS:-}"
+
+# 微信读书公众号采集配置
+weread:
+  cookie: "${WEREAD_COOKIE:-}"
+  ticket: "${WEREAD_TICKET:-}"
+  vid: "${WEREAD_VID:-}"
+  mp_max_pages: ${WEREAD_MP_MAX_PAGES:-20}
+  page_interval: ${WEREAD_PAGE_INTERVAL:-1}
+  content_interval: ${WEREAD_CONTENT_INTERVAL:-2}
 log:
   #日志文件路径，默认为空字符串，表示不输出到文件。如果要输出到文件，可以指定一个路径如：/var/log/we-mp-rss.log 如果为空就不纪录
    file: ${LOG_FILE:-}

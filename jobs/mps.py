@@ -7,7 +7,7 @@ from core.log import logger
 from core.task import TaskScheduler
 from core.models.feed import Feed
 from core.config import cfg,DEBUG
-from core.print import print_info,print_success,print_error
+from core.print import print_info,print_success,print_error,print_warning
 from driver.wx import WX_API
 from driver.success import Success
 from core.redis_client import clear_env_exception
@@ -66,7 +66,19 @@ def do_job(mp=None,task:MessageTask=None,isTest=False):
                 count = 1
                 success = True
             else:
-                wx=WxGather().Model()
+                wx = WxGather().Model()
+                # 微信读书公众号（MP_WXS_*）自动改用 weread_mp 采集器：
+                # 只有微信读书 Cookie 已配置时才启用，否则该 feed 无法用默认模式采集
+                if str(mp.id or "").startswith("MP_WXS_") and mp.id != "MP_WXS_FEATURED_ARTICLES":
+                    from core.wx.model.weread_mp import MpsWereadMP
+                    _mp_wx = MpsWereadMP()
+                    _mp_wx._load_weread_auth()
+                    if _mp_wx._weread_cookies:
+                        wx = _mp_wx
+                        print_info(f"[{mp.mp_name}] 微信读书公众号 → weread_mp 采集模式")
+                    else:
+                        print_warning(f"[{mp.mp_name}] 微信读书 Cookie 未配置，跳过采集")
+                        raise RuntimeError("微信读书 Cookie 未配置")
                 try:
                     wx.get_Articles(mp.faker_id,CallBack=UpdateArticle,Mps_id=mp.id,Mps_title=mp.mp_name, MaxPage=1,Over_CallBack=Update_Over,interval=interval)
                     success = True
@@ -207,11 +219,34 @@ class MessageTaskTracker:
             return self._tasks.get(task_id, {})
 
 tracker = MessageTaskTracker()
-import threading
+
 
 def add_job(feeds:list[Feed]=None,task:MessageTask=None,isTest=False):
+    # 微信读书 Cookie 刷新已移至宿主机完成（见 scripts/refresh_weread_cookie.py + launchd 模板），
+    # 容器不在内部启动浏览器刷新——因为 profile 由 macOS 钥匙串加密，容器内 Linux Chromium
+    # 无法解密宿主机写入的登录态。容器只读取 wx.lic 中的明文 Cookie 进行同步即可。
     if isTest:
         TaskQueue.clear_queue()
+
+    # 微信读书模式：在「执行 / 定时任务」真正同步文章前，若 Cookie 过期则自动
+    # 请宿主机刷新代理去刷新（容器不跑浏览器，见 scripts/host_weread_refresh_agent.py）。
+    # 这样用户无需手动敲命令——点执行或定时触发时即自动保活 Cookie。
+    if not isTest and (cfg.get("gather.model") or "web") == "weread_mp":
+        try:
+            from core.weread_cookie_refresh import request_host_refresh
+            res = request_host_refresh()
+            if res.get("triggered") and not res.get("ok"):
+                # 刷新失败（多为登录态过期需扫码）→ 中止本次任务并给出明确提示
+                msg = res.get("message") or "Cookie 刷新失败"
+                print_error(f"[cookie] 自动刷新失败: {msg}")
+                raise RuntimeError(f"微信读书 Cookie 自动刷新失败：{msg}")
+            if res.get("triggered"):
+                print_info(f"[cookie] 自动刷新: {res.get('message')}")
+        except RuntimeError:
+            raise
+        except Exception as e:
+            # 代理调用异常等：不阻断同步（可能 Cookie 仍有效），仅告警
+            print_warning(f"[cookie] 自动刷新异常（继续执行）: {e}")
 
     # 动态获取公众号列表：如果 feeds 为 None 且 task 不为 None，则动态获取
     if feeds is None and task is not None:

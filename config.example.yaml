@@ -125,6 +125,8 @@ gather:
   #是否采集内容  默认False
   content: ${GATHER.CONTENT:-False}
   #采集模式，web模式（可采集到发布链接)，api模式（可采集临时链接），app模式（采集最新消息）
+  #可选值: web | api | app | free_publish | playwright | weread | weread_mp | auto
+  #weread_mp 使用微信读书 Web 接口采集公众号文章，需要下方 Cookie 与 x-wr-ticket
   model: ${GATHER.MODEL:-web}
   #是否自动检查未采集文章内容，默认False
   content_auto_check: ${GATHER.CONTENT_AUTO_CHECK:-True}
@@ -132,7 +134,17 @@ gather:
   content_auto_interval: ${GATHER.CONTENT_AUTO_INTERVAL:-59}
   #内容修正模式，默认web 允许值 web、api
   content_mode: ${GATHER.CONTENT_MODE:-web}
-  #是否清理html标签 默认True 
+  #单篇正文抓取总超时（秒），超时会终止浏览器进程并释放文章锁
+  content_fetch_timeout: ${GATHER.CONTENT_FETCH_TIMEOUT:-60}
+  #FETCHING锁超过该时间（秒）后自动恢复；历史无时间戳锁也会恢复
+  content_fetch_stale_timeout: ${GATHER.CONTENT_FETCH_STALE_TIMEOUT:-300}
+  #每轮补抓文章数量，避免超过内容队列的总任务超时
+  content_batch_size: ${GATHER.CONTENT_BATCH_SIZE:-5}
+  #单篇正文最大失败次数
+  content_max_failures: ${GATHER.CONTENT_MAX_FAILURES:-3}
+  #首选模式失败后是否回退到另一模式；设为False可启用api-only
+  content_fallback: ${GATHER.CONTENT_FALLBACK:-True}
+  #是否清理html标签 默认True
   clean_html: ${GATHER.CLEAN_HTML:-False}
   #浏览器类型 默认firefox 允许值 firefox/edge/webkit
   browser_type: ${BROWSER_TYPE:-firefox}
@@ -149,7 +161,7 @@ proxy:
 #安全配置
 safe:
     # 需要隐藏的配置信息，用逗号分隔 如：db,secret,token等 
-    hide_config: "${SAFE_HIDE_CONFIG:-db,secret,token,notice.wechat,notice.feishu,notice.dingding}"
+    hide_config: "${SAFE_HIDE_CONFIG:-db,secret,token,weread.cookie,weread.ticket,notice.wechat,notice.feishu,notice.dingding}"
     # 授权加密KEY
     lic_key: "${SAFE_LIC_KEY:-RACHELOS}"
 # 微信账号配置
@@ -157,6 +169,23 @@ wechat:
   # 允许切换的账号ID列表，为空表示允许所有账号，用逗号分隔
   # 例如: "account1,account2,account3" 或留空 ""
   allowed_accounts: "${WECHAT_ALLOWED_ACCOUNTS:-}"
+
+# 微信读书配置
+weread:
+  #微信读书 Cookie (从浏览器 weread.qq.com 请求中获取)
+  #需要包含: wr_vid, wr_skey, wr_gid, wr_fp 等
+  cookie: "${WEREAD_COOKIE:-}"
+  #公众号文章列表请求凭据（从 /web/mp/articles 请求头复制）
+  ticket: "${WEREAD_TICKET:-}"
+  #用户vid (从 wr_vid Cookie 中提取)
+  vid: "${WEREAD_VID:-}"
+  #故障补抓时最多扫描的文章列表页数
+  mp_max_pages: ${WEREAD_MP_MAX_PAGES:-20}
+  #列表翻页与单篇正文请求的最小间隔（秒）
+  page_interval: ${WEREAD_PAGE_INTERVAL:-1}
+  content_interval: ${WEREAD_CONTENT_INTERVAL:-2}
+  #采集前自动把不在书架上的公众号添加到书架（关注），false 则跳过
+  auto_add_to_shelf: ${WEREAD_AUTO_ADD_TO_SHELF:-true}
 log:
   #日志文件路径，默认为空字符串，表示不输出到文件。如果要输出到文件，可以指定一个路径如：/var/log/we-mp-rss.log 如果为空就不纪录
    file: ${LOG_FILE:-}

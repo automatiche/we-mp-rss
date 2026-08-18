@@ -64,6 +64,7 @@ A tool for subscribing to and managing WeChat Official Account content, providin
 - Scheduled automatic content updates
 - Multiple database support (default SQLite, optional MySQL)
 - Multiple scraping methods support
+- Optional `weread_mp` collection mode for `MP_WXS_*` feeds ([configuration](docs/weread-mp.md))
 - Multiple RSS client support
 - Authorization expiration reminders
 - Custom notification channels
@@ -259,7 +260,5 @@ The following are the environment variable configurations supported in `config.y
 | `LOG_FILE` | Empty | Log file path |
 | `LOG_LEVEL` | `INFO` | Log level |
 | `EXPORT_PDF` | `False` | Whether to enable PDF export functionality |
-
-
 
 

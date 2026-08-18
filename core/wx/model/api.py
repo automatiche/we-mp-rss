@@ -6,7 +6,7 @@ import yaml
 import re
 from bs4 import BeautifulSoup
 from core.wx.base import WxGather
-from core.print import print_error
+from core.print import print_error, print_warning, print_info
 from core.log import logger
 # 继承 BaseGather 类
 class MpsApi(WxGather):
@@ -42,6 +42,8 @@ class MpsApi(WxGather):
         session=self.session
         # 起始页数
         i = start_page
+        retry_count = 0
+        max_retries = 3
         while True:
             if i >= MaxPage:
                 break
@@ -59,6 +61,11 @@ class MpsApi(WxGather):
                 self._cookies=resp.cookies
                 # 流量控制了, 退出
                 if msg['base_resp']['ret'] == 200013:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        print_warning(f"频率限制, 第{retry_count}次重试...")
+                        time.sleep(60 * retry_count)
+                        continue
                     super().Error("frequencey control, stop at {}".format(str(begin)))
                     break
                 
@@ -68,6 +75,15 @@ class MpsApi(WxGather):
                 
                 # 如果返回的内容中为空则结束
                 if 'app_msg_list' not in msg:
+                    # 检查是否因接口被限制
+                    if msg['base_resp']['ret'] != 0:
+                        err_msg = msg['base_resp'].get('err_msg','')
+                        print_warning(f"appmsg 返回错误(ret={msg['base_resp']['ret']}): {err_msg}")
+                        print_info("检测到 appmsg 接口不可用，自动降级到 free_publish 模式...")
+                        self._fallback_to_free_publish(faker_id, Mps_id, Mps_title, CallBack,
+                                                        start_page, MaxPage, interval,
+                                                        Gather_Content, Item_Over_CallBack, Over_CallBack)
+                        return
                     super().Error("all ariticle parsed")
                     break
                 if msg['base_resp']['ret'] != 0:
@@ -100,3 +116,30 @@ class MpsApi(WxGather):
                 super().Item_Over(item={"mps_id":Mps_id,"mps_title":Mps_title},CallBack=Item_Over_CallBack)
         super().Over(CallBack=Over_CallBack)
         pass
+
+    def _fallback_to_free_publish(self, faker_id, Mps_id, Mps_title, CallBack,
+                                   start_page, MaxPage, interval,
+                                   Gather_Content, Item_Over_CallBack, Over_CallBack):
+        """降级到 free_publish 多端点模式"""
+        try:
+            print_info("===== 自动降级到 free_publish 多端点模式 =====")
+            from core.wx.model.free_publish import MpsFreePublish
+            fp = MpsFreePublish()
+            fp.token = self.token
+            fp.cookies = self.cookies
+            fp.session = self.session
+            fp.get_Articles(
+                faker_id=faker_id,
+                Mps_id=Mps_id,
+                Mps_title=Mps_title,
+                CallBack=CallBack,
+                start_page=start_page,
+                MaxPage=MaxPage,
+                interval=interval,
+                Gather_Content=Gather_Content,
+                Item_Over_CallBack=Item_Over_CallBack,
+                Over_CallBack=Over_CallBack,
+            )
+        except Exception as e:
+            print_error(f"降级到 free_publish 失败: {e}")
+            super().Error(f"所有采集方式均失败: {e}")

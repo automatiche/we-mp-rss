@@ -130,6 +130,15 @@ class Config:
     def reload(self):
         self.config=self.get_config()
     def set(self,key,default:any=None):
+        # 保存前先重新加载文件最新内容，避免模块级单例实例用陈旧的
+        # 内存数据整文件覆盖其他模块写入的内容（例如 data/wx.lic 中
+        # token_data 与 weread_data 需要共存，不能互相覆盖）
+        try:
+            self.reload()
+        except Exception:
+            pass
+        if self.config is None:
+            self.config = {}
         self.config[key] = default
         self.save_config()
     def __fix(self,v:str):

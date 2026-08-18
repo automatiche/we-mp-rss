@@ -84,11 +84,56 @@ def get_Articles(faker_id:str):
         response.raise_for_status  # 检查状态码是否为200
         data = response.text  # 解析JSON数据
         data = json.loads(data)  # 手动解析
+        if data.get('base_resp', {}).get('ret', -1) != 0:
+            # 尝试 free_publish 降级
+            print(f"appmsgpublish 返回错误: {data.get('base_resp', {}).get('err_msg', '')}, 尝试 free_publish...")
+            return get_Articles_free_publish(faker_id)
         data['publish_page']=json.loads(data['publish_page'])
         data['publish_info']=json.loads(data['publish_info'])
     except Exception as e:
         print(f"请求失败: {e}",data)
     return data
+
+def get_Articles_free_publish(faker_id:str):
+    """降级方案：使用新版 free_publish 接口"""
+    from driver.token import get as get_val
+    endpoints = [
+        {
+            "url": "https://mp.weixin.qq.com/cgi-bin/free_publish",
+            "params": {
+                "action": "list", "begin": 0, "count": 5,
+                "fakeid": faker_id, "token": get_val("token"),
+                "lang": "zh_CN", "f": "json", "ajax": 1
+            }
+        },
+        {
+            "url": "https://mp.weixin.qq.com/cgi-bin/appmsg",
+            "params": {
+                "action": "list_ex", "begin": 0, "count": 5,
+                "fakeid": faker_id, "type": "9",
+                "token": get_val("token"),
+                "lang": "zh_CN", "f": "json", "ajax": "1"
+            }
+        },
+    ]
+    
+    headers = {
+        "Cookie": get_val("cookie"),
+        "User-Agent": get_val("user_agent")
+    }
+    
+    for ep in endpoints:
+        try:
+            print(f"尝试端点: {ep['url']}")
+            response = requests.get(ep['url'], params=ep['params'], headers=headers)
+            data = json.loads(response.text)
+            if data.get('base_resp', {}).get('ret', 0) == 0:
+                print(f"端点可用: {ep['url']}")
+                return data
+        except Exception as e:
+            print(f"端点 {ep['url']} 失败: {e}")
+    
+    return {}
 #通过公众号文章链接获取公众号id
 def get_id(url:str)->str:
     pattern = r"/([^/]+)$"  # 使用原始字符串避免转义问题

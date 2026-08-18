@@ -55,6 +55,9 @@ def set_token(data:any,ext_data:any=None):
 
 def _save_to_local(token_data: dict):
     """保存到本地文件"""
+    # 先重新加载文件最新内容，避免 wx_cfg 单例用启动时的陈旧内存
+    # 整文件覆盖其他模块写入的数据（如 weread_data）
+    wx_cfg.reload()
     wx_cfg.set("token_data", token_data)
     wx_cfg.save_config()
     wx_cfg.reload()

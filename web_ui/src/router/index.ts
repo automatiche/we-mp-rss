@@ -240,6 +240,15 @@ const routes = [
           permissions: ['admin'] 
         }
       },
+      {
+        path: 'weread',
+        name: 'WereadManagement',
+        component: () => import('@/views/WereadManagement.vue'),
+        meta: { 
+          requiresAuth: true,
+          permissions: ['wechat:manage'] 
+        }
+      },
     ]
   },
   {

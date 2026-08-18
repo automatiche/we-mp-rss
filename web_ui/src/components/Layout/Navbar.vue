@@ -65,6 +65,12 @@
         </template>
         Access Key
       </a-menu-item>
+      <a-menu-item key="/weread">
+        <template #icon>
+          <icon-book />
+        </template>
+        微信读书
+      </a-menu-item>
       <a-menu-item key="/users">
         <template #icon>
           <icon-user />

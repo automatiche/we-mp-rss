@@ -94,6 +94,9 @@ class Db:
             if "has_content" not in columns:
                 alter_statements.append("ALTER TABLE articles ADD COLUMN has_content INTEGER DEFAULT 0")
 
+            if "fetch_started_at" not in columns:
+                alter_statements.append("ALTER TABLE articles ADD COLUMN fetch_started_at BIGINT")
+
             if not alter_statements:
                 return
 

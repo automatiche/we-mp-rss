@@ -67,6 +67,7 @@ docker run -d  --name we-mp-rss  -p 8001:8001 -v ./data:/app/data  docker.1ms.ru
 - 定时自动更新内容
 - 支持多种数据库（默认SQLite，可选MySQL）
 - 支持多种抓取方式
+- 可选 `weread_mp` 模式采集现有 `MP_WXS_*` 公众号（[配置说明](docs/weread-mp.md)）
 - 支持多种RSS客户端
 - 支持授权过期提醒
 - 支持自定义通知渠道

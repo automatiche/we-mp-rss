@@ -366,18 +366,35 @@ async def update_mps(
                     message="请不要频繁更新操作",
                     data={"time_span":time_span}
                 )
-        result=[]    
-        def UpArt(mp):
-            from core.wx import WxGather
-            wx=WxGather().Model()
-            wx.get_Articles(mp.faker_id,Mps_id=mp.id,Mps_title=mp.mp_name,CallBack=UpdateArticle,start_page=start_page,MaxPage=end_page)
-            result=wx.articles
-        import threading
-        threading.Thread(target=UpArt,args=(mp,)).start()
+        # 同步采集，等待结果返回；失败时把真实原因透出给前端，
+        # 避免「异步线程 + 异常被吞」导致前端只看到“刷新成功”但实际 0 篇入库。
+        from core.wx import WxGather
+        wx = WxGather().Model()
+        try:
+            wx.get_Articles(
+                mp.faker_id,
+                Mps_id=mp.id,
+                Mps_title=mp.mp_name,
+                CallBack=UpdateArticle,
+                start_page=start_page,
+                MaxPage=end_page,
+            )
+        except Exception as e:
+            err = str(e)
+            # 微信读书登录态失效等，给出可操作的明确提示
+            hint = ""
+            if any(k in err for k in ("401", "鉴权", "-2013", "-2012", "登录超时", "登录态")):
+                hint = " 微信读书 Cookie 已失效，请到「微信读书管理」页重新扫码授权或更新 Cookie。"
+            print(f"更新公众号文章失败 [{mp.mp_name}]: {err}")
+            return error_response(
+                code=50002,
+                message=f"更新「{mp.mp_name}」失败: {err}{hint}",
+                data={"mp_id": mp_id},
+            )
         return success_response({
             "time_span":time_span,
-            "list":result,
-            "total":len(result),
+            "list":wx.articles,
+            "total":len(wx.articles),
             "mps":mp
         })
     except Exception as e:

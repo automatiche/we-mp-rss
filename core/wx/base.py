@@ -54,14 +54,48 @@ class WxGather:
         self.RecordAid(aid)
         return False
     def Model(self,type=None):
+        """
+        工厂方法：根据采集模式返回对应的采集器实例
+        
+        支持的模式:
+        - free_publish : 新版多端点降级模式（推荐），自动尝试 free_publish → 
+                         appmsgpublish → appmsg 等多个端点
+        - playwright   : Playwright 浏览器模式（兜底），使用真实浏览器访问后台
+        - app          : 旧版 App 浏览器模式（appmsgpublish 接口 + Playwright 内容抓取）
+        - web          : 旧版 Web 浏览器模式（同 app，多一层 HTML 清洗）
+        - api          : 旧版 API 模式（appmsg 接口 + requests 内容抓取）
+        - auto         : 自动降级，从 free_publish → playwright 依次尝试
+        - weread       : 微信读书通道，采集书架笔记、划线和书评
+        - weread_mp    : 微信读书 Web 通道，采集公众号文章与正文
+        """
         type=type or cfg.get("gather.model","web")
         print(f"采集模式:{type}")
-        if type=="app":
+        if type=="free_publish":
+            from core.wx.model.free_publish import MpsFreePublish
+            wx=MpsFreePublish()
+        elif type=="playwright":
+            from core.wx.model.playwright_mp import MpsPlaywright
+            wx=MpsPlaywright()
+        elif type=="app":
             from core.wx.model.app import MpsAppMsg
             wx=MpsAppMsg()
         elif type=="web":
             from core.wx.model.web import MpsWeb
             wx=MpsWeb()
+        elif type=="api":
+            from core.wx.model.api import MpsApi
+            wx=MpsApi()
+        elif type=="weread":
+            from core.wx.model.weread import MpsWeread
+            wx=MpsWeread()
+        elif type=="weread_mp":
+            from core.wx.model.weread_mp import MpsWereadMP
+            wx=MpsWereadMP()
+        elif type=="auto":
+            # 自动降级模式：先尝试 free_publish，失败后降级到 playwright
+            from core.wx.model.free_publish import MpsFreePublish
+            wx=MpsFreePublish()
+            wx._auto_fallback = True  # 标记为自动降级模式
         else:
             from core.wx.model.api import MpsApi
             wx=MpsApi()

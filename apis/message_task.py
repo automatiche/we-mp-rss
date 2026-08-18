@@ -187,34 +187,54 @@ async def run_message_task(
         500: 数据库查询异常
     """
     try:
-        from jobs.mps import run
+        from jobs.mps import run, get_feeds, tracker
+        import time as _time
         mps={
             "count":0,
             "list":[]
         }
         tasks=run(task_id,isTest=isTest)
-        count=0
         if not tasks:
             raise HTTPException(status_code=404, detail="Message task not found or has been deactivated")
-        else:
-            import json
-            for task in tasks:
-                try:
-                    # mps_id 可能为空（UI 提示"留空则对所有公众号生效"），
-                    # 通过 get_feeds() 拿实际 feed 数，与 jobs/mps.py 一致
-                    from jobs.mps import get_feeds
-                    feeds = get_feeds(task)
-                    ids = [{"id": f.id, "name": f.mp_name} for f in feeds]
-                    count += len(ids)
-                    mps['count']=count
-                    mps['list'].append(ids)
-                except Exception as e:
-                    print_error(e)
-                    pass
+        # 统计本次命中的订阅号数量（真实语义：订阅号数 ≠ 新增文章数）
+        mp_count = 0
+        for task in tasks:
+            try:
+                feeds = get_feeds(task)
+                mp_count += len(feeds) if feeds else 0
+                mps['list'].append([getattr(f, 'id', None) for f in (feeds or [])])
+            except Exception as e:
+                print_error(e)
         if isTest:
-            count=1
-        mps["message"]=f"执行成功，共执行更新{count}个订阅号"
-        return success_response(data=mps,message=f"执行成功，共执行更新{count}个订阅号")
+            mps["count"] = 1
+            mps["message"] = "测试任务执行成功"
+        else:
+            # 同步等待本次任务在队列中执行完毕，再汇总真实新增文章数，
+            # 避免把"订阅号数量"误报为"新增文章数"
+            article_total = 0
+            deadline = _time.time() + 60
+            while _time.time() < deadline:
+                all_done = True
+                pending = False
+                article_total = 0
+                for task in tasks:
+                    st = tracker.get_task_status(task.id)
+                    if not st:
+                        pending = True
+                        all_done = False
+                        break
+                    total = st.get('total', 0)
+                    done = st.get('completed', 0) + st.get('failed', 0)
+                    article_total += sum(r.get('article_count', 0) for r in st.get('mp_results', []))
+                    if total and done < total:
+                        all_done = False
+                if not pending and all_done:
+                    break
+                _time.sleep(2)
+            mps["count"] = article_total
+            mps["message"] = f"已触发 {mp_count} 个订阅号同步，本次新增 {article_total} 篇文章"
+
+        return success_response(data=mps,message=mps["message"])
 
     except Exception as e:
         print_error(e)
