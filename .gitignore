@@ -1,6 +1,7 @@
 __pycache__
 *.xml
 *.tmp
+.env
 dist/
 build/
 static/anti_bot*
