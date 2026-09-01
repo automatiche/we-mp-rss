@@ -1,6 +1,7 @@
 import http from './http'
 import axios from 'axios'
 import { Message } from '@arco-design/web-vue'
+import sm4 from 'sm-crypto/src/sm4/index.js'
 export interface LoginParams {
   username: string
   password: string
@@ -11,10 +12,23 @@ export interface LoginResult {
   token_type: string
 }
 
-export const login = (data: LoginParams) => {
+export const login = async (data: LoginParams) => {
   const formData = new URLSearchParams()
+  let password = data.password
+  let kid = ''
+  try {
+    // 口令 SM4 加密传输(等保合规): 取一次性密钥 -> 加密
+    const salt = await http.get('/wx/auth/salt') as any
+    if (salt?.kid && salt?.key && salt?.iv) {
+      kid = salt.kid
+      password = sm4.encrypt(data.password, salt.key, { mode: 'cbc', iv: salt.iv })
+    }
+  } catch {
+    // salt 接口不可用(老版本)则回退明文
+  }
   formData.append('username', data.username)
-  formData.append('password', data.password)
+  formData.append('password', password)
+  if (kid) formData.append('kid', kid)
   return http.post<LoginResult>('/wx/auth/login', formData, {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded'

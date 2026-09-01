@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Form
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 from core.auth import (
@@ -54,9 +54,21 @@ async def qr_status(current_user=Depends(get_current_user)):
 @router.get("/qr/over",summary="扫码完成")
 async def qr_success(current_user=Depends(get_current_user)):
      return success_response(await WX_API.Close())    
+@router.get("/salt", summary="下发一次性SM4密钥(口令加密传输用)")
+async def get_salt():
+    from core.sm4crypt import issue_key
+    return success_response(issue_key())
+
 @router.post("/login", summary="用户登录")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = authenticate_user(form_data.username, form_data.password)
+async def login(
+    username: str = Form(...),
+    password: str = Form(...),
+    kid: str = Form(""),
+):
+    if kid:
+        from core.sm4crypt import decrypt as sm4_decrypt
+        password = sm4_decrypt(password, kid)
+    user = authenticate_user(username, password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
