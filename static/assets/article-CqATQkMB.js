@@ -1,1 +1,0 @@
-import{v as e}from"./http-CJRHIaVB.js";export{e as getArticles};
