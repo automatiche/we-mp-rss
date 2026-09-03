@@ -1,8 +1,8 @@
 """SM4 国密加密传输 - 口令字段加密(等保合规,一次性密钥)。
 
-流程: GET /api/v1/auth/salt -> {kid,key,iv}; 前端 SM4-CBC 加密口令;
-POST /auth/login form 表单追加 kid 字段, 后端解密后即焚。
-不传 kid 的明文请求仍兼容(脚本/AK 调用方)。
+流程: GET /api/v1/wx/auth/salt -> {kid,key,iv}; 前端 SM4-CBC 加密口令;
+POST /api/v1/wx/auth/login form 表单追加 kid 字段, 后端解密后即焚。
+不传 kid 的明文请求仍兼容（仅供旧脚本；网页登录会发送 SM4 密文）。
 """
 import secrets
 from datetime import datetime, timedelta, timezone

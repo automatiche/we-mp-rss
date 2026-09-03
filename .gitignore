@@ -2,6 +2,9 @@ __pycache__
 *.xml
 *.tmp
 .env
+config.production.yaml
+config.production.yaml.*
+config.yaml.bak.*
 dist/
 build/
 static/anti_bot*

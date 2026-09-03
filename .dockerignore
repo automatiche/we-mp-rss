@@ -1,5 +1,12 @@
 .git
 .gitignore
+.env
+.env.*
+!web_ui/.env.production
+config.yaml
+config.yaml.*
+config.production.yaml
+config.production.yaml.*
 .idea
 .vscode
 .trae
@@ -15,4 +22,3 @@ build
 ref
 web_ui/node_modules
 qtserver/node_modules
-

@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1
+
+# 生产环境当前使用并已验证的上游镜像。只在其上叠加本 fork 的安全修复，
+# 避免重新构建 Playwright/浏览器等大体积运行时。
+ARG WERSS_BASE_IMAGE=rachelos/we-mp-rss:latest
+ARG NODE_IMAGE=node:22-alpine
+
+FROM ${NODE_IMAGE} AS frontend
+WORKDIR /src
+COPY web_ui/package.json web_ui/package-lock.json ./
+RUN npm ci
+COPY web_ui/ ./
+RUN npm run build
+
+FROM ${WERSS_BASE_IMAGE} AS runtime
+WORKDIR /app
+
+# 上游镜像的虚拟环境目录按架构命名，例如 /app/env_x86_64。
+RUN set -eu; \
+    venv="$(find /app -maxdepth 1 -type d -name 'env_*' | head -n 1)"; \
+    test -n "$venv"; \
+    "$venv/bin/python3" -m pip install --no-cache-dir \
+      cachetools==5.5.2 \
+      gmssl==3.2.2
+
+# 后端安全修复及生产既有的 RSS fresh 定制。
+COPY apis/auth.py /app/apis/auth.py
+COPY apis/rss.py /app/apis/rss.py
+COPY core/sm4crypt.py /app/core/sm4crypt.py
+
+# 先清空上游旧静态资源，避免旧登录 bundle 仍可被直接访问或被漏扫命中。
+RUN rm -rf /app/static && mkdir -p /app/static
+COPY --from=frontend /src/dist/ /app/static/
