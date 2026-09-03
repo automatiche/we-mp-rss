@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# 生产环境当前使用并已验证的上游镜像。只在其上叠加本 fork 的安全修复，
-# 避免重新构建 Playwright/浏览器等大体积运行时。
+# 复用生产已验证的上游运行时，在其上覆盖 personal fork 的完整源码，
+# 避免重新构建 Playwright/浏览器等大体积基础环境。
 ARG WERSS_BASE_IMAGE=rachelos/we-mp-rss:latest
 ARG NODE_IMAGE=node:22-alpine
 
@@ -15,18 +15,20 @@ RUN npm run build
 FROM ${WERSS_BASE_IMAGE} AS runtime
 WORKDIR /app
 
-# 上游镜像的虚拟环境目录按架构命名，例如 /app/env_x86_64。
+# 依赖层只在 requirements.txt 变化时重跑。上游镜像的虚拟环境目录按架构命名，
+# 例如 /app/env_x86_64。
+COPY requirements.txt /tmp/we-mp-rss-requirements.txt
 RUN set -eu; \
     venv="$(find /app -maxdepth 1 -type d -name 'env_*' | head -n 1)"; \
     test -n "$venv"; \
     "$venv/bin/python3" -m pip install --no-cache-dir \
-      cachetools==5.5.2 \
-      gmssl==3.2.2
+      -r /tmp/we-mp-rss-requirements.txt; \
+    rm -f /tmp/we-mp-rss-requirements.txt
 
-# 后端安全修复及生产既有的 RSS fresh 定制。
-COPY apis/auth.py /app/apis/auth.py
-COPY apis/rss.py /app/apis/rss.py
-COPY core/sm4crypt.py /app/core/sm4crypt.py
+# 覆盖完整源码，使以后对任意 Python 模块、模板或脚本的维护都能随构建生效。
+# .dockerignore 已排除 .env、生产配置、data、旧 static 和本机构建目录。
+COPY . /app/
+RUN chmod +x /app/start.sh
 
 # 先清空上游旧静态资源，避免旧登录 bundle 仍可被直接访问或被漏扫命中。
 RUN rm -rf /app/static && mkdir -p /app/static
