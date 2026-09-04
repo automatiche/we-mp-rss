@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, File, UploadFile, Form
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 from core.auth import get_current_user_or_ak
@@ -21,6 +21,7 @@ from tools.mdtools.export import export_md_to_doc, process_articles
 
 # 图片处理
 from PIL import Image
+from core.remote_image import RemoteImageError, fetch_remote_image
 
 router = APIRouter(prefix="/tools", tags=["工具"])
 
@@ -824,7 +825,8 @@ async def proxy_remote_image(
     width: Optional[int] = Query(None, description="目标宽度"),
     height: Optional[int] = Query(None, description="目标高度"),
     mode: CropMode = Query("center", description="裁剪方式"),
-    output_format: str = Query("png", description="输出格式：png, jpeg, webp")
+    output_format: str = Query("png", description="输出格式：png, jpeg, webp"),
+    current_user: dict = Depends(get_current_user_or_ak),
 ):
     """
     代理下载远程图片，支持裁剪
@@ -836,14 +838,14 @@ async def proxy_remote_image(
     - output_format: 输出格式
     """
     try:
-        import httpx
-        
-        # 下载图片
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            response = await client.get(url)
-            if response.status_code != 200:
-                return error_response(400, f"下载图片失败: HTTP {response.status_code}")
-            image_data = response.content
+        # 仅允许标准 HTTP(S) 公网图片；每次跳转都会重新校验目标地址。
+        image_data, final_url = await fetch_remote_image(url)
+
+        # 即使响应伪造 image/* Content-Type，也必须能被 Pillow 识别为图片。
+        source_image = Image.open(io.BytesIO(image_data))
+        source_image.verify()
+        source_image = Image.open(io.BytesIO(image_data))
+        original_size = source_image.size
         
         # 判断是否需要裁剪
         if aspect_ratio or (width and height):
@@ -859,17 +861,11 @@ async def proxy_remote_image(
         else:
             # 不裁剪，直接返回原图
             cropped_data = image_data
-            try:
-                img = Image.open(io.BytesIO(image_data))
-                original_size = img.size
-                new_size = img.size
-                # 尝试从图片或URL推断格式
-                img_format = img.format.lower() if img.format else "png"
-                if img_format in ["jpeg", "jpg", "png", "webp"]:
-                    output_format = img_format if img_format != "jpg" else "jpeg"
-            except Exception:
-                original_size = (0, 0)
-                new_size = (0, 0)
+            new_size = original_size
+            # 尝试从图片推断格式
+            img_format = source_image.format.lower() if source_image.format else "png"
+            if img_format in ["jpeg", "jpg", "png", "webp"]:
+                output_format = img_format if img_format != "jpg" else "jpeg"
         
         # 确定MIME类型
         mime_map = {
@@ -882,7 +878,7 @@ async def proxy_remote_image(
         
         # 从URL提取文件名
         from urllib.parse import urlparse, unquote
-        parsed_url = urlparse(url)
+        parsed_url = urlparse(final_url)
         path = unquote(parsed_url.path)
         original_filename = os.path.basename(path) if path else "image"
         if "." not in original_filename:
@@ -903,7 +899,14 @@ async def proxy_remote_image(
             }
         )
         
-    except ValueError as e:
-        return error_response(400, str(e))
-    except Exception as e:
-        return error_response(500, f"图片处理失败: {str(e)}")
+    except (RemoteImageError, ValueError, OSError):
+        # 不回显连接错误、目标端口状态或解析细节，避免被用于内网探测。
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=error_response(400, "无法获取远程图片"),
+        )
+    except Exception:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=error_response(500, "图片处理失败"),
+        )

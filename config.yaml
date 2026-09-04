@@ -150,10 +150,14 @@ proxy:
   http_url: ${PROXY_HTTP_URL:-}
 #安全配置
 safe:
-    # 需要隐藏的配置信息，用逗号分隔 如：db,secret,token等 
+    # 需要隐藏的配置信息，用逗号分隔 如：db,secret,token等
     hide_config: "${SAFE_HIDE_CONFIG:-db,secret,token,notice.wechat,notice.feishu,notice.dingding}"
     # 授权加密KEY
     lic_key: "${SAFE_LIC_KEY:-RACHELOS}"
+    # 生产默认关闭 Swagger、ReDoc 和 OpenAPI schema；仅在可信环境临时开启
+    api_docs_enabled: ${API_DOCS_ENABLED:-False}
+    # 同源部署留空；确需跨域时填写精确 Origin，多个值以逗号分隔，禁止使用 *
+    cors_origins: "${CORS_ALLOWED_ORIGINS:-}"
 # 微信账号配置
 wechat:
   # 允许切换的账号ID列表，为空表示允许所有账号，用逗号分隔

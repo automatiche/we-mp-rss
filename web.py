@@ -9,7 +9,7 @@ if sys.platform == 'win32':
 from fastapi import FastAPI, Request, APIRouter, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.openapi.models import OAuthFlows as OAuthFlowsModel
 from fastapi.openapi.models import OAuthFlowPassword
@@ -39,6 +39,24 @@ import os
 from core.config import cfg,VERSION,API_BASE
 from starlette.middleware.base import BaseHTTPMiddleware
 
+
+def _configured_cors_origins():
+    """Return the exact origins explicitly allowed by configuration."""
+    origins = cfg.get("safe.cors_origins", "")
+    if isinstance(origins, str):
+        return [
+            origin.strip().rstrip("/")
+            for origin in origins.split(",")
+            if origin.strip() and origin.strip() != "*"
+        ]
+    if isinstance(origins, list):
+        return [
+            str(origin).strip().rstrip("/")
+            for origin in origins
+            if str(origin).strip() and str(origin).strip() != "*"
+        ]
+    return []
+
 class AKMiddleware(BaseHTTPMiddleware):
     """Access Key 认证中间件"""
     async def dispatch(self, request: Request, call_next):
@@ -50,14 +68,16 @@ class AKMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         return response
 
+api_docs_enabled = bool(cfg.get("safe.api_docs_enabled", False))
+
 app = FastAPI(
     title="WeRSS API",
     description="微信公众号RSS生成服务API文档",
     version="1.0.0",
-    docs_url="/api/docs",  # 指定文档路径
-    redoc_url="/api/redoc",  # 指定Redoc路径
+    docs_url="/api/docs" if api_docs_enabled else None,
+    redoc_url="/api/redoc" if api_docs_enabled else None,
     # 指定OpenAPI schema路径
-    openapi_url="/api/openapi.json",
+    openapi_url="/api/openapi.json" if api_docs_enabled else None,
     openapi_tags=[
         {
             "name": "认证",
@@ -70,14 +90,16 @@ app = FastAPI(
     }
 )
 
-# CORS配置
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# 同源部署不需要 CORS。只有明确配置可信 Origin 时才启用，禁止通配符。
+cors_origins = _configured_cors_origins()
+if cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
+    )
 
 # AK认证中间件
 app.add_middleware(AKMiddleware)
@@ -89,6 +111,11 @@ async def add_custom_header(request: Request, call_next):
     response.headers["X-Powered-By"] = "Rachel"
     response.headers["GITHUB"] = "https://github.com/rachelos/we-mp-rss"
     response.headers["Server"] = cfg.get("app_name", "WeRSS")
+    # 管理页面不允许被第三方站点嵌入；CSP 是现代浏览器的主控制，XFO 兼容旧客户端。
+    if not request.url.path.startswith(f"{API_BASE}/proxy/"):
+        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 # 创建API路由分组
 api_router = APIRouter(prefix=f"{API_BASE}")
@@ -132,14 +159,14 @@ async def serve_vue_app(request: Request, path: str):
     """处理Vue应用路由"""
     # 排除API和静态文件路由
     if path.startswith(('api', 'assets', 'static')) or path in ['favicon.ico','vite.svg','logo.svg']:
-        return None
+        return Response(status_code=404)
     
     # 返回Vue入口文件
     index_path = os.path.join("static", "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
     
-    return {"error": "Not Found"}, 404
+    return Response(status_code=404)
 
 @app.get("/",tags=['默认'],include_in_schema=False)
 async def serve_root(request: Request):
